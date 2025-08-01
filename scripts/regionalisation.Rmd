@@ -27,7 +27,7 @@ p_load(here,
 
 ```{r create_dirs}
 dir.create(here("data", "raw"), recursive = TRUE)
-dir.create(here("data", "final"), recursive = TRUE)
+dir.create(here("data", "ready"), recursive = TRUE)
 dir.create(here("figures"))
 ```
 
