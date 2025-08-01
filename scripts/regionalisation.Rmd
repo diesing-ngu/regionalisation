@@ -1,0 +1,211 @@
+---
+title: "Regionalisation of the Environment"
+author: "Markus Diesing"
+output: 
+  html_document: 
+    toc: yes
+---
+
+# Packages
+
+```{r packages, echo=TRUE, message=FALSE, warning=FALSE}
+if(!require("pacman")) install.packages("pacman"); library(pacman)
+p_load(here,
+       terra,
+       sf,
+       RStoolbox,
+       ggplot2,
+       ggpubr,
+       gridExtra
+       )
+```
+
+
+# Loading data
+
+## Creating a rasterstack
+
+```{r rasterstack, warning=FALSE}
+cri <- rast(here("data", "raw", "CRI_median_2024-06-21.tif"))
+ocar <- rast(here("data", "raw", "OCAR_2024-03-20.tif"))
+ocs <- rast(here("data", "raw", "OCS0-10cm_2024-03-20.tif"))
+
+vars <- c(ocs, ocar, cri)
+names(vars) <- c("OCS", "OCAR", "CRI")
+```
+
+
+## shp files 
+
+These will be used at the end to create a figure.
+
+```{r shp}
+land<- read_sf(here("data", "raw", "continent.shp"))
+land <- st_transform(land[3,], crs(vars))
+study_site <- st_transform(read_sf(here("data", "raw", "AoI_Harris_mod_dissolve.shp")), crs(vars))
+```
+
+
+
+# Normalise raster layers
+
+Performs normalisation (scaling) and centering, i.e. divide by standard deviation
+
+```{r normalisation}
+vars.norm <- normImage(vars, norm = TRUE)
+vars.norm
+hist(vars.norm)
+```
+
+
+# kmeans classification 
+
+https://www.rdocumentation.org/packages/RStoolbox/versions/0.2.3/topics/unsuperclass
+
+## Specify the maximum number of clusters to be analysed
+
+```{r max_number_of_clusters}
+max_cl <- 12
+```
+
+## How many clusters?
+
+```{r how_many_clusters}
+df_total <- data.frame()
+for (i in 1:max_cl) {
+  set.seed(25)
+  unC <- unsuperClass(vars.norm[[1:nlyr(vars.norm)]], nSamples = 4000, nClasses = i, nStarts = 100, 
+                      norm = FALSE, clusterMap = TRUE, algorithm = "Hartigan-Wong")
+  
+  stat <- (unC[["model"]][["tot.withinss"]])
+  df <- data.frame(i,stat)
+  df_total <- rbind(df_total,df)
+}
+```
+
+## Plot graph
+
+```{r graph}
+elbow_plot <- ggplot(df_total,aes(i,stat)) + geom_bar(stat = "identity") +
+              xlab("Number of clusters") + ylab("total within sum of squares ") +
+              scale_x_continuous(breaks = c(1:max_cl))
+elbow_plot
+
+ggsave(filename = "elbow_plot.jpg", plot = elbow_plot, device = "jpeg", path = here("figures"), height = 10, width = 15, units = "cm", dpi = 500)
+```
+
+## Specify the number of clusters to be used
+
+based on the graph above
+
+```{r select_number_of_clusters}
+n.cl <- 6
+```
+
+## Run k-means clustering
+
+```{r k_means}
+set.seed(25)
+unC <- unsuperClass(vars.norm, 
+                    nSamples = 10000, 
+                    nClasses = n.cl, 
+                    nStarts = 100, 
+                    norm = FALSE, 
+                    clusterMap = TRUE, 
+                    algorithm = "Hartigan-Wong")
+
+unC$model
+```
+
+
+## Change cluster number by means of OCAR
+
+```{r change_cluster_number}
+lut <- matrix(nrow = n.cl, ncol = 2)
+lut[,1] <- as.numeric(names(sort(unC$model$centers[,2], decreasing = TRUE)))
+lut[,2] <- c(1:n.cl)
+
+regions <- classify(unC$map, lut)
+```
+
+
+## Define colour palette
+
+```{r col_pal}
+col_pal <- c('#1f78b4', '#a6cee3','#b2df8a','#33a02c', '#fb9a99', '#e31a1c', '#fdbf6f', '#ff7f00', '#cab2d6', '#6a3d9a', '#ffff99', '#b15928')
+```
+
+
+## Plot regions
+
+```{r plot_regions, warning=FALSE}
+ggR(regions, geom_raster = TRUE, forceCat = TRUE) +
+  scale_fill_manual(values = col_pal, na.value = NA)
+```
+
+
+# Export Geotiff
+
+```{r export_geotiff, warning=FALSE}
+writeRaster(regions, here("data", "ready", paste0("regions_", n.cl, ".tif")), overwrite = TRUE)
+```
+
+# Violin plots
+
+```{r violin plots}
+r <- c(regions, vars)
+smp <- as.data.frame(spatSample(x = r, size = 10000, method = "random", na.rm = TRUE))
+smp[,1] <- as.factor(smp[,1])
+names(smp)[1] <- "Cluster"
+
+for (i in 2:ncol(smp)) {
+  print(ggplot(smp, aes(x = Cluster, y = smp[,i], fill = Cluster)) +
+  geom_violin() +
+ scale_fill_manual(values = col_pal) +
+ scale_y_continuous(name = names(smp[i])) +
+ theme(axis.title.x = element_blank()) +
+  theme(legend.position = "none"))
+  }
+```
+
+# Figure for publication
+
+```{r figure, warning=FALSE}
+AoI <- ext(regions)
+land <- st_crop(land, AoI)
+
+p0 <- ggR(regions, geom_raster = TRUE, forceCat = TRUE) + 
+  geom_sf(data = study_site, fill = NA, linetype = 5) +
+  geom_sf(data = land, fill = "darkgrey") +
+  scale_fill_manual(values = col_pal, na.value = NA) +
+  theme_bw() +
+  theme(axis.title = element_blank()) +
+  theme(legend.position = "none" ) + 
+  ggpubr::rotate_y_text()
+
+p1 <- ggplot(smp, aes(x = Cluster, y = CRI, fill = Cluster)) +
+  geom_boxplot() +
+  scale_fill_manual(values = col_pal) +
+  scale_y_continuous(name = "CRI (-)") +
+  theme(axis.title.x = element_blank()) +
+  theme(legend.position = "none")
+p2 <- ggplot(smp, aes(x = Cluster, y = OCAR, fill = Cluster)) +
+  geom_boxplot()+
+  scale_fill_manual(values = col_pal) +
+  scale_y_continuous(name = expression(OCAR~(g~m^{-2}~yr^{-1}))) +
+  theme(axis.title.x = element_blank()) +
+  theme(legend.position = "none")
+p3 <- ggplot(smp, aes(x = Cluster, y = OCS, fill = Cluster)) +
+  geom_boxplot()+
+  scale_fill_manual(values = col_pal) +
+  scale_y_continuous(name = expression(OC~stock~(kg~m^{-2}))) +
+  theme(axis.title.x = element_blank()) +
+  theme(legend.position = "none")
+
+lay <- rbind(c(1,3),
+             c(1,2),
+             c(1,4))
+
+p <- grid.arrange(p0, p3, p2, p1, nrow=4, layout_matrix=lay)
+ggsave( paste0("regions_", n.cl, ".jpg"), plot = p, device = "jpeg", path = here("figures"), height = 20, width = 20, units = "cm", dpi = 500, type ="cairo")
+```
