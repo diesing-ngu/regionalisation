@@ -6,7 +6,9 @@ output:
     toc: yes
 ---
 
-# Packages
+# Preparations
+
+## Install packages
 
 ```{r packages, echo=TRUE, message=FALSE, warning=FALSE}
 if(!require("pacman")) install.packages("pacman"); library(pacman)
@@ -21,9 +23,21 @@ p_load(here,
 ```
 
 
+## Create directories
+
+```{r create_dirs}
+dir.create(here("data", "raw"), recursive = TRUE)
+dir.create(here("data", "final"), recursive = TRUE)
+dir.create(here("figures"))
+```
+
+
 # Loading data
 
 ## Creating a rasterstack
+
+Organic carbon stocks (ocs) and accumulation rates (ocar) are available from PANGAEA: https://doi.org/10.1594/PANGAEA.965617.
+The carbon reactivity index (cri) can be reproduced with this workflow: https://github.com/diesing-ngu/cri_model
 
 ```{r rasterstack, warning=FALSE}
 cri <- rast(here("data", "raw", "CRI_median_2024-06-21.tif"))
@@ -37,7 +51,7 @@ names(vars) <- c("OCS", "OCAR", "CRI")
 
 ## shp files 
 
-These will be used at the end to create a figure.
+These will be used at the end to create a figure and are not essential to the analysis.
 
 ```{r shp}
 land<- read_sf(here("data", "raw", "continent.shp"))
@@ -49,7 +63,7 @@ study_site <- st_transform(read_sf(here("data", "raw", "AoI_Harris_mod_dissolve.
 
 # Normalise raster layers
 
-Performs normalisation (scaling) and centering, i.e. divide by standard deviation
+Performs normalisation (scaling) and centring, i.e. divide by standard deviation.
 
 ```{r normalisation}
 vars.norm <- normImage(vars, norm = TRUE)
@@ -59,8 +73,6 @@ hist(vars.norm)
 
 
 # kmeans classification 
-
-https://www.rdocumentation.org/packages/RStoolbox/versions/0.2.3/topics/unsuperclass
 
 ## Specify the maximum number of clusters to be analysed
 
