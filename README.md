@@ -1,1 +1,4 @@
-"# regionalisation" 
+## Regionalisation of the Norwegian continental margin based on sedimentary organic carbon
+
+Organic carbon stock, organic carbon accumulation rate (Diesing et al., 2024)[https://doi.org/10.1038/s43247-024-01502-8] and the carbon reactivity index (CRI)
+[https://github.com/diesing-ngu/cri_model] were used to carry out a regionalisation by unsupervised classification. Prior to that, the three raster layers were centred by subtracting the mean of the raster layer from each pixel value and normalised by dividing the pixel value by the standard deviation of the raster layer. This step was performed with the normImage function of the R package RStoolbox (Müller et al., 2024)[https://doi.org/10.1111/2041-210X.14451]. A k-means clustering based on the algorithm of Hartigan and Wong was carried out using the function unsuperClass of RStoolbox. The decision on the number of clusters to be created was aided by an elbow plot.
